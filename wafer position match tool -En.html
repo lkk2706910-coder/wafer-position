@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Wafer Position Match Tool-En</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f5f5f5; margin: 0; display: flex; flex-direction: column; align-items: center; }
+        #toolbar { background: white; padding: 12px; width: 100%; display: flex; flex-wrap: wrap; gap: 15px; align-items: center; justify-content: center; border-bottom: 2px solid #ddd; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .ctrl-group { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; }
+        select, input { padding: 6px; border-radius: 4px; border: 1px solid #ccc; background: #fff; }
+        button { padding: 8px 16px; cursor: pointer; border-radius: 4px; border: none; font-weight: bold; transition: all 0.2s; }
+        #btn-mgr { background: #FFCA28; color: #333; }
+        #btn-mgr:hover { background: #FFB300; }
+        #btn-clear-all { background: #F44336; color: white; }
+        #btn-clear-all:hover { background: #D32F2F; }
+        #btn-undo { background: #9E9E9E; color: white; }
+        #btn-undo:hover { background: #757575; }
+        #canvas-container { position: relative; margin: 20px; background: white; box-shadow: 0 10px 30px rgba(0,0,0,0.15); border-radius: 8px; overflow: hidden; }
+        canvas { display: block; }
+        
+        /* Modal Styles */
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(3px); }
+        .modal-content { background: white; margin: 30px auto; padding: 25px; border-radius: 12px; width: 90%; max-width: 600px; text-align: center; position: relative; box-shadow: 0 20px 50px rgba(0,0,0,0.3); }
+        .close { position: absolute; right: 20px; top: 15px; font-size: 28px; cursor: pointer; color: #666; }
+        
+        /* Manager Window Styles */
+        .mgr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 15px; }
+        .mgr-card { border: 1px solid #ddd; padding: 15px; border-radius: 8px; background: #fafafa; }
+        .preview-box { width: 120px; height: 120px; background: #eee; margin: 10px auto; border: 1px solid #ccc; display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: 50%; border: 1px solid black; }
+        .preview-box img { max-width: 100%; max-height: 100%; }
+    </style>
+</head>
+<body>
+
+<div id="toolbar">
+    <div class="ctrl-group">
+        <select id="mode"><option value="FI5.X">FI5.X</option><option value="FI6.4">FI6.4</option></select>
+    </div>
+    <div class="ctrl-group">
+        <label>CASS:</label><select id="cass"><option>A</option><option>B</option><option>C</option><option>D</option></select>
+    </div>
+    <div class="ctrl-group">
+        <label>SIDE:</label><select id="side"><option>S1</option><option>S2</option></select>
+    </div>
+    <div class="ctrl-group">
+        <label>Target:</label><select id="station"><option value="LL">LL</option><option value="CHA">CHA</option><option value="CHB">CHB</option><option value="CHC">CHC</option></select>
+    </div>
+    <div class="ctrl-group">
+        <label>Offset:</label><input type="number" id="offset" value="0" style="width: 55px;">
+    </div>
+    <button id="btn-mgr" onclick="toggleModal('mgrModal', true)">Dual MAP Management</button>
+    <button id="btn-undo" onclick="undo()">Undo</button>
+    <button id="btn-clear-all" onclick="clearAllImages()">Clear All Images</button>
+</div>
+
+<div id="canvas-container">
+    <canvas id="mainCanvas"></canvas>
+</div>
+
+<div id="zoomModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="toggleModal('zoomModal', false)">&times;</span>
+        <h3 id="zoomTitle" style="margin-bottom: 15px;">Node: -- | Source: --</h3>
+        <div style="position: relative; width: 500px; height: 500px; margin: 0 auto;">
+            <canvas id="zoomCanvas" width="500" height="500" style="background: #fff; border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.1);"></canvas>
+        </div>
+        <p id="zoomInfo" style="font-size: 20px; margin-top: 20px; color: #D32F2F; font-weight: bold;"></p>
+    </div>
+</div>
+
+<div id="mgrModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="toggleModal('mgrModal', false)">&times;</span>
+        <h2>Dual MAP Management (S1/S2)</h2>
+        <p style="font-size: 13px; color: #666;">Tip: You can use the Paste button or press <b>Ctrl+V</b> to paste an image.</p>
+        <div class="mgr-grid">
+            <div class="mgr-card">
+                <h3>S1 (Left Arm)</h3>
+                <div class="preview-box" id="pre-S1">Not Loaded</div>
+                <button onclick="document.getElementById('file-S1').click()">Upload</button>
+                <button onclick="pasteToSide('S1')">Paste</button>
+                <button onclick="clearImg('S1')">Clear</button>
+                <input type="file" id="file-S1" hidden onchange="handleFile(this, 'S1')">
+            </div>
+            <div class="mgr-card">
+                <h3>S2 (Right Arm)</h3>
+                <div class="preview-box" id="pre-S2">Not Loaded</div>
+                <button onclick="document.getElementById('file-S2').click()">Upload</button>
+                <button onclick="pasteToSide('S2')">Paste</button>
+                <button onclick="clearImg('S2')">Clear</button>
+                <input type="file" id="file-S2" hidden onchange="handleFile(this, 'S2')">
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// --- 1. Global Coordinates & Rules Configuration ---
+const REF_W = 600, REF_H = 750, REF_WAFER_R = 45;
+
+const RAW_WAFER_POS = {
+    "A2": [245, 55], "A1": [355, 55], "B1": [135, 165], "B2": [135, 275],
+    "C2": [465, 165], "C1": [465, 275], "MF1": [245, 275], "MF2": [355, 275],
+    "LL1": [200, 385], "LL2": [400, 385], "CS": [300, 515],
+    "CA": [150, 670], "CB": [250, 670], "CC": [350, 670], "CD": [450, 670]
+};
+
+const RAW_MODULE_BOXES = {
+    "CHA": [190, 0, 410, 110], "CHB": [80, 110, 190, 330], "CHC": [410, 110, 520, 330],
+    "MF": [190, 110, 410, 330], "LL": [80, 330, 520, 440], "Cooling": [250, 440, 350, 590],
+    "CassA": [100, 590, 200, 720], "CassB": [200, 590, 300, 720], "CassC": [300, 590, 400, 720], "CassD": [400, 590, 500, 720]
+};
+
+const RAW_LABEL_POS = {
+    "CHA": [300, 20], "CHB": [135, 220], "CHC": [465, 220], "MF": [300, 160],
+    "LL": [300, 350], "Cooling": [300, 460], "CassA": [150, 600], "CassB": [250, 600], "CassC": [350, 600], "CassD": [450, 600]
+};
+
+let waferImages = { S1: null, S2: null };
+let historyStack = []; 
+let clickableRegions = [];
+const canvas = document.getElementById('mainCanvas');
+const ctx = canvas.getContext('2d');
+
+// --- 2. Angle Logic ---
+function getNodeAngle(mode, nodeName, cassName, side, startAngle) {
+    if (["CA", "CB", "CC", "CD"].includes(nodeName)) return (startAngle) % 360;
+    let lookupName = (nodeName === "MF1") ? "LL1" : (nodeName === "MF2" ? "LL2" : nodeName);
+    let rules = {};
+    if (mode === "FI5.X") {
+        if (["A", "B"].includes(cassName)) {
+            rules = (side === "S1") ? {"LL1": 210, "A1": 30, "B1": 300, "C1": 120, "CS": 0} : {"CS": 300, "LL2": 0, "A2": 180, "B2": 90, "C2": 270};
+        } else {
+            rules = (side === "S1") ? {"CS": 30, "LL1": 0, "A1": 180, "B1": 90, "C1": 270} : {"LL2": 150, "A2": 330, "B2": 240, "C2": 60, "CS": 0};
+        }
+    } else { // FI6.4
+        if (["A", "B"].includes(cassName)) {
+            rules = (side === "S1") ? {"LL1": 195, "A1": 15, "B1": 285, "C1": 105, "CS": 0} : {"CS": 255, "LL2": 345, "A2": 165, "B2": 75, "C2": 255};
+        } else {
+            rules = (side === "S1") ? {"CS": 105, "LL1": 15, "A1": 195, "B1": 105, "C1": 285} : {"LL2": 165, "A2": 345, "B2": 255, "C2": 75, "CS": 0};
+        }
+    }
+    return ( (rules[lookupName] || 0) + startAngle ) % 360;
+}
+
+function getFullPath(cassName, side, station) {
+    let path = [`C${cassName}`];
+    if ((["A", "B"].includes(cassName) && side === "S2") || (["C", "D"].includes(cassName) && side === "S1")) path.push("CS");
+    path.push(side === "S1" ? "LL1" : "LL2");
+    if (station !== "LL") {
+        path.push(side === "S1" ? "MF1" : "MF2");
+        let target = {"CHA":"A", "CHB":"B", "CHC":"C"}[station];
+        path.push(`${target}${side === "S1" ? '1' : '2'}`);
+    }
+    return path;
+}
+
+// --- 3. Core Drawing & Geometric Clipping ---
+function draw() {
+    canvas.width = REF_W; canvas.height = REF_H;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    clickableRegions = [];
+    const mode = document.getElementById('mode').value, selC = document.getElementById('cass').value, 
+          selS = document.getElementById('side').value, selSt = document.getElementById('station').value, 
+          baseAngle = parseInt(document.getElementById('offset').value) || 0;
+
+    const pathS1 = getFullPath(selC, "S1", selSt), pathS2 = getFullPath(selC, "S2", selSt);
+
+    ctx.strokeStyle = "#0015D1"; ctx.lineWidth = 1.5; ctx.fillStyle = "#5C6BC0"; ctx.font = "bold 13px Segoe UI"; ctx.textAlign = "center";
+    for (let name in RAW_MODULE_BOXES) {
+        let b = RAW_MODULE_BOXES[name]; ctx.strokeRect(b[0], b[1], b[2]-b[0], b[3]-b[1]);
+        let lp = RAW_LABEL_POS[name] || [(b[0]+b[2])/2, b[1]+18]; ctx.fillText(name, lp[0], lp[1]);
+    }
+
+    for (let name in RAW_WAFER_POS) {
+        let [cx, cy] = RAW_WAFER_POS[name];
+        let showS1 = pathS1.includes(name) && (waferImages.S1 || selS === "S1"), showS2 = pathS2.includes(name) && (waferImages.S2 || selS === "S2");
+        let sideToDraw = (showS1 && showS2) ? selS : (showS1 ? "S1" : (showS2 ? "S2" : null)), isInPath = sideToDraw !== null;
+        let angle = getNodeAngle(mode, name, selC, sideToDraw || selS, baseAngle), displayAngle = (180 + angle) % 360;
+
+        ctx.beginPath(); ctx.arc(cx, cy, REF_WAFER_R, 0, Math.PI * 2);
+        ctx.fillStyle = isInPath ? "white" : "#F0F4F7"; ctx.fill();
+        ctx.strokeStyle = "#BDC3C7"; ctx.lineWidth = 1; ctx.stroke();
+
+        if (isInPath && waferImages[sideToDraw]) {
+            drawClippedWafer(ctx, waferImages[sideToDraw], cx, cy, REF_WAFER_R, displayAngle);
+        } else { ctx.fillStyle = isInPath ? "#2C3E50" : "#BDC3C7"; ctx.font = "11px Segoe UI"; ctx.fillText(name, cx, cy + 4); }
+
+        // --- Notch Indicator Drawing ---
+        let notchRad = ( (90 + displayAngle) * Math.PI ) / 180;
+        let ex = cx + REF_WAFER_R * Math.cos(notchRad);
+        let ey = cy + REF_WAFER_R * Math.sin(notchRad);
+        let p1x = cx + (REF_WAFER_R - 9) * Math.cos(notchRad); 
+        let p1y = cy + (REF_WAFER_R - 9) * Math.sin(notchRad);
+
+        ctx.beginPath();
+        ctx.moveTo(p1x, p1y);
+        ctx.lineTo(ex + 4 * Math.sin(notchRad), ey - 4 * Math.cos(notchRad));
+        ctx.lineTo(ex - 4 * Math.sin(notchRad), ey + 4 * Math.cos(notchRad));
+        ctx.closePath();
+        ctx.fillStyle = "#F44336"; ctx.fill();
+
+        if (isInPath) {
+            ctx.beginPath(); ctx.arc(cx, cy, REF_WAFER_R + 1.5, 0, Math.PI * 2);
+            ctx.strokeStyle = "#D32F2F"; ctx.lineWidth = 2; ctx.stroke();
+            ctx.fillStyle = "#D32F2F"; ctx.font = "bold 13px Segoe UI"; ctx.fillText(`${angle}°`, cx, cy - REF_WAFER_R - 10);
+        }
+        clickableRegions.push({ name, cx, cy, angle, side: sideToDraw || selS });
+    }
+}
+
+function drawClippedWafer(targetCtx, img, cx, cy, r, rotAngle) {
+    targetCtx.save(); targetCtx.beginPath(); targetCtx.arc(cx, cy, r, 0, Math.PI * 2); targetCtx.clip();
+    targetCtx.translate(cx, cy); targetCtx.rotate(rotAngle * Math.PI / 180);
+    let minDim = Math.min(img.width, img.height), cropSize = minDim * 0.92;
+    targetCtx.drawImage(img, (img.width-cropSize)/2, (img.height-cropSize)/2, cropSize, cropSize, -r, -r, r*2, r*2);
+    targetCtx.restore();
+}
+
+// --- 4. Zoom Window Interaction & Geometric Correction ---
+canvas.addEventListener('click', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (REF_W / rect.width), y = (e.clientY - rect.top) * (REF_H / rect.height);
+    clickableRegions.forEach(reg => { if (Math.sqrt((x - reg.cx)**2 + (y - reg.cy)**2) < REF_WAFER_R) showZoom(reg); });
+});
+
+function showZoom(reg) {
+    const zCvs = document.getElementById('zoomCanvas'), zCtx = zCvs.getContext('2d'), img = waferImages[reg.side];
+    zCtx.clearRect(0, 0, 500, 500);
+    
+    let cx = 250, cy = 250;
+    let wafer_zoom_r = 210; 
+    let angle = reg.angle;
+    let displayAngleForZoom = (180 + angle) % 360;
+
+    // 校正視角，將 CHA, CHB, CHC 的 Slit Valve 都轉到 12 點鐘方向
+    let viewOffset = 0;
+    if (["A1", "A2"].includes(reg.name)) viewOffset = 180;      
+    if (["B1", "B2"].includes(reg.name)) viewOffset = 270;      
+    if (["C1", "C2"].includes(reg.name)) viewOffset = 90;       
+    
+    displayAngleForZoom = (displayAngleForZoom + viewOffset) % 360;
+
+    // 畫白色背景圓底
+    zCtx.beginPath(); 
+    zCtx.arc(cx, cy, wafer_zoom_r, 0, Math.PI * 2);
+    zCtx.fillStyle = "#fff"; 
+    zCtx.fill();
+    
+    // 畫入 Wafer 影像
+    if (img) drawClippedWafer(zCtx, img, cx, cy, wafer_zoom_r, displayAngleForZoom);
+    
+    // 畫外框線
+    zCtx.beginPath();
+    zCtx.arc(cx, cy, wafer_zoom_r, 0, Math.PI * 2);
+    zCtx.lineWidth = 1;
+    zCtx.strokeStyle = "black";
+    zCtx.stroke();
+
+    // --- 畫 1.5, 4.5, 7.5, 10.5 的外圍標示點並替換為數字 1, 2, 3, 4 ---
+    if (["A1", "A2", "B1", "B2", "C1", "C2"].includes(reg.name)) {
+        const markers = [
+            { hour: 1.5, label: "1" },
+            { hour: 4.5, label: "2" },
+            { hour: 7.5, label: "3" },
+            { hour: 10.5, label: "4" }
+        ];
+        const markerRadius = wafer_zoom_r + 10; 
+
+        zCtx.save();
+        markers.forEach(m => {
+            let rad = (m.hour * 30 - 90) * Math.PI / 180;
+            let dotX = cx + markerRadius * Math.cos(rad);
+            let dotY = cy + markerRadius * Math.sin(rad);
+
+            zCtx.beginPath();
+            zCtx.arc(dotX, dotY, 6, 0, Math.PI * 2);
+            zCtx.fillStyle = "#FF5722";
+            zCtx.fill();
+            zCtx.strokeStyle = "#BF360C";
+            zCtx.lineWidth = 1.5;
+            zCtx.stroke();
+
+            let textX = cx + (markerRadius + 15) * Math.cos(rad);
+            let textY = cy + (markerRadius + 15) * Math.sin(rad);
+            zCtx.fillStyle = "#D84315";
+            zCtx.font = "bold 13px Arial";
+            zCtx.textAlign = "center";
+            zCtx.textBaseline = "middle";
+            zCtx.fillText(m.label, textX, textY);
+        });
+        zCtx.restore();
+    }
+
+    // 將所有站點的 Slit Valve 統一設定在 12 點鐘位置
+    const sv_config = {
+        "A1": { x: cx, y: 20, rot: 0 }, 
+        "A2": { x: cx, y: 20, rot: 0 },
+        "B1": { x: cx, y: 20, rot: 0 }, 
+        "B2": { x: cx, y: 20, rot: 0 },
+        "C1": { x: cx, y: 20, rot: 0 }, 
+        "C2": { x: cx, y: 20, rot: 0 },
+        "LL1": { x: cx, y: 20, rot: 0 }, 
+        "LL2": { x: cx, y: 20, rot: 0 }
+    };
+
+    if (sv_config[reg.name]) {
+        let cfg = sv_config[reg.name];
+        zCtx.save();
+        zCtx.translate(cfg.x, cfg.y);
+        zCtx.rotate(cfg.rot * Math.PI / 180);
+        
+        let barW = 300, barH = 40;
+        zCtx.fillStyle = "#4AA3FF"; 
+        zCtx.fillRect(-barW/2, -barH/2, barW, barH);
+        
+        zCtx.textAlign = "center"; zCtx.textBaseline = "middle";
+        zCtx.fillStyle = "white"; zCtx.font = "bold 16px Arial";
+        zCtx.fillText("SLIT VALVE", 0, -7);
+        zCtx.fillStyle = "black"; zCtx.font = "bold 13px Arial";
+        zCtx.fillText(`Station: ${reg.name} | Rotation: ${reg.angle}°`, 0, 9);
+        zCtx.restore();
+    }
+
+    document.getElementById('zoomTitle').innerText = `Node: ${reg.name} | Source: ${reg.side}`;
+    document.getElementById('zoomInfo').innerText = `Robot Angle: ${reg.angle}°`;
+    toggleModal('zoomModal', true);
+}
+
+// --- 5. Image Management & History Undo System ---
+function saveState() {
+    historyStack.push({ S1: waferImages.S1, S2: waferImages.S2 });
+    if (historyStack.length > 20) historyStack.shift();
+}
+
+function undo() {
+    if (historyStack.length > 0) {
+        let prevState = historyStack.pop();
+        waferImages.S1 = prevState.S1;
+        waferImages.S2 = prevState.S2;
+        updateMgrPreview('S1');
+        updateMgrPreview('S2');
+        draw();
+    } else {
+        alert("No steps to undo!");
+    }
+}
+
+function clearAllImages() {
+    saveState();
+    waferImages.S1 = null;
+    waferImages.S2 = null;
+    updateMgrPreview('S1');
+    updateMgrPreview('S2');
+    draw();
+}
+
+function toggleModal(id, s) { document.getElementById(id).style.display = s ? 'block' : 'none'; }
+function handleFile(i, s) { if (i.files[0]) { let r = new FileReader(); r.onload=(e)=>loadImgToSide(e.target.result,s); r.readAsDataURL(i.files[0]); } }
+function loadImgToSide(d, s) { 
+    saveState(); 
+    let i = new Image(); i.onload=()=>{ waferImages[s]=i; updateMgrPreview(s); draw(); }; i.src=d; 
+}
+function updateMgrPreview(s) { document.getElementById(`pre-${s}`).innerHTML = waferImages[s] ? `<img src="${waferImages[s].src}">` : "Not Loaded"; }
+
+function clearImg(s) { 
+    saveState(); 
+    waferImages[s]=null; updateMgrPreview(s); draw(); 
+}
+
+// --- 新增：貼上圖片功能 ---
+async function pasteToSide(s) {
+    try {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+            if (item.types.includes('image/png') || item.types.includes('image/jpeg')) {
+                const blob = await item.getType(item.types.find(t=>t.startsWith('image/')));
+                const r = new FileReader(); r.onload=(e)=>loadImgToSide(e.target.result,s); r.readAsDataURL(blob);
+            }
+        }
+    } catch(err) { 
+        // 遇到權限阻擋時，在背景靜默紀錄而不跳出 alert
+        console.warn("Clipboard access denied or failed.", err); 
+    }
+}
+
+// 監聽鍵盤貼上事件 (Ctrl+V)
+window.addEventListener('paste', (e) => {
+    const i = (e.clipboardData || e.originalEvent.clipboardData).items, s = document.getElementById('side').value;
+    for (const item of i) { 
+        if (item.kind === 'file' && item.type.startsWith('image/')) { 
+            let r = new FileReader(); 
+            r.onload=(ev)=>loadImgToSide(ev.target.result,s); 
+            r.readAsDataURL(item.getAsFile()); 
+            break; 
+        } 
+    }
+});
+
+['mode', 'cass', 'side', 'station', 'offset'].forEach(id => { 
+    document.getElementById(id).addEventListener('change', draw); 
+    document.getElementById(id).addEventListener('input', draw); 
+});
+window.onload = draw;
+</script>
+</body>
+</html>

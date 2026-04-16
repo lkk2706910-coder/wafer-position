@@ -1,0 +1,599 @@
+<!DOCTYPE html> 
+<html lang="zh-TW"> 
+<head> 
+<meta charset="UTF-8"> 
+<title>Wafer Match Tool v3 - Slit Valve 幾何與佈局修正版 (含復原與清除)</title> 
+<style> 
+
+        body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f5f5f5; margin: 0; display: flex; flex-direction: column; align-items: center; } 
+
+        #toolbar { background: white; padding: 12px; width: 100%; display: flex; flex-wrap: wrap; gap: 15px; align-items: center; justify-content: center; border-bottom: 2px solid #ddd; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 5px rgba(0,0,0,0.1); } 
+
+        .ctrl-group { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: bold; } 
+
+        select, input { padding: 6px; border-radius: 4px; border: 1px solid #ccc; background: #fff; } 
+
+        button { padding: 8px 16px; cursor: pointer; border-radius: 4px; border: none; font-weight: bold; transition: all 0.2s; } 
+
+        #btn-mgr { background: #FFCA28; color: #333; } 
+
+        #btn-mgr:hover { background: #FFB300; } 
+
+        #btn-clear-all { background: #F44336; color: white; } 
+
+        #btn-clear-all:hover { background: #D32F2F; } 
+
+        #btn-undo { background: #9E9E9E; color: white; } 
+
+        #btn-undo:hover { background: #757575; } 
+
+        #canvas-container { position: relative; margin: 20px; background: white; box-shadow: 0 10px 30px rgba(0,0,0,0.15); border-radius: 8px; overflow: hidden; } 
+
+        canvas { display: block; } 
+
+        /* 彈窗樣式 */ 
+
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(3px); } 
+
+        .modal-content { background: white; margin: 30px auto; padding: 25px; border-radius: 12px; width: 90%; max-width: 600px; text-align: center; position: relative; box-shadow: 0 20px 50px rgba(0,0,0,0.3); } 
+
+        .close { position: absolute; right: 20px; top: 15px; font-size: 28px; cursor: pointer; color: #666; } 
+
+        /* 管理視窗樣式 */ 
+
+        .mgr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 15px; } 
+
+        .preview-box { width: 120px; height: 120px; background: #eee; margin: 15px auto; border: 1px solid #666; display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: 50%; box-shadow: inset 0 2px 5px rgba(0,0,0,0.1); } 
+
+        .preview-box img { width: 104%; height: 104%; object-fit: cover; } 
+
+        .mgr-card { border: 2px solid #e0e0e0; padding: 20px 15px 15px; border-radius: 12px; background: #ffffff; cursor: pointer; transition: all 0.2s; position: relative; box-shadow: 0 4px 6px rgba(0,0,0,0.05); } 
+
+        .mgr-card.selected { border-color: #2196F3; background: #f8fbff; box-shadow: 0 0 15px rgba(33, 150, 243, 0.2); } 
+
+        .mgr-card:focus { outline: none; } 
+
+        .mgr-card::after { content: '點擊選取'; position: absolute; top: 8px; right: 12px; font-size: 11px; color: #bbb; background: #f0f0f0; padding: 2px 8px; border-radius: 10px; } 
+</style> 
+</head> 
+<body> 
+<div id="toolbar"> 
+<div class="ctrl-group"> 
+<select id="mode"><option value="FI5.X">FI5.X</option><option value="FI6.4">FI6.4</option></select> 
+</div> 
+<div class="ctrl-group"> 
+<label>CASS:</label><select id="cass"><option>A</option><option>B</option><option>C</option><option>D</option></select> 
+</div> 
+<div class="ctrl-group"> 
+<label>SIDE:</label><select id="side"><option>S1</option><option>S2</option></select> 
+</div> 
+<div class="ctrl-group"> 
+<label>目標:</label><select id="station"><option value="LL">LL</option><option value="CHA">CHA</option><option value="CHB">CHB</option><option value="CHC">CHC</option></select> 
+</div> 
+<div class="ctrl-group"> 
+<label>Offset:</label><input type="number" id="offset" value="0" style="width: 55px;"> 
+</div> 
+<button id="btn-mgr" onclick="toggleModal('mgrModal', true)">雙 MAP 管理</button> 
+<button id="btn-undo" onclick="undo()">復原</button> 
+<button id="btn-clear-all" onclick="clearAllImages()">清除全部貼圖</button> 
+</div> 
+<div id="canvas-container"> 
+<canvas id="mainCanvas"></canvas> 
+</div> 
+<div id="zoomModal" class="modal"> 
+<div class="modal-content"> 
+<span class="close" onclick="toggleModal('zoomModal', false)">&times;</span> 
+<h3 id="zoomTitle" style="margin-bottom: 15px;">Node: -- | Source: --</h3> 
+<div style="position: relative; width: 500px; height: 500px; margin: 0 auto;"> 
+<canvas id="zoomCanvas" width="500" height="500" style="background: #fff; border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.1);"></canvas> 
+</div> 
+<p id="zoomInfo" style="font-size: 20px; margin-top: 20px; color: #D32F2F; font-weight: bold;"></p> 
+</div> 
+</div> 
+<div id="mgrModal" class="modal"> 
+<div class="modal-content"> 
+<span class="close" onclick="toggleModal('mgrModal', false)">&times;</span> 
+<h2>雙 MAP 管理 (S1/S2)</h2> 
+<div class="mgr-grid"> 
+<div class="mgr-card selected" id="card-S1" tabindex="0" onclick="selectSide('S1')"> 
+<h3>S1 (Left Arm)</h3> 
+<div class="preview-box" id="pre-S1">尚未載入</div> 
+<button onclick="event.stopPropagation(); document.getElementById('file-S1').click()">上傳</button> 
+<button onclick="event.stopPropagation(); pasteToSide('S1')">貼上</button> 
+<button onclick="event.stopPropagation(); clearImg('S1')">清除</button> 
+<input type="file" id="file-S1" hidden onchange="handleFile(this, 'S1')"> 
+</div> 
+<div class="mgr-card" id="card-S2" tabindex="0" onclick="selectSide('S2')"> 
+<h3>S2 (Right Arm)</h3> 
+<div class="preview-box" id="pre-S2">尚未載入</div> 
+<button onclick="event.stopPropagation(); document.getElementById('file-S2').click()">上傳</button> 
+<button onclick="event.stopPropagation(); pasteToSide('S2')">貼上</button> 
+<button onclick="event.stopPropagation(); clearImg('S2')">清除</button> 
+<input type="file" id="file-S2" hidden onchange="handleFile(this, 'S2')"> 
+</div> 
+</div> 
+</div> 
+</div> 
+<script> 
+
+// --- 1. 全域座標與規則配置 --- 
+
+// 修正 REF_H 增加 100px (上下各留 50px)
+
+const REF_W = 600, REF_H = 850, REF_WAFER_R = 45; 
+
+// 所有 Y 座標平移 +50
+
+const RAW_WAFER_POS = { 
+
+    "A2": [245, 105], "A1": [355, 105], "B1": [135, 215], "B2": [135, 325], 
+
+    "C2": [465, 215], "C1": [465, 325], "MF1": [245, 325], "MF2": [355, 325], 
+
+    "LL1": [200, 435], "LL2": [400, 435], "CS": [300, 565], 
+
+    "CA": [150, 720], "CB": [250, 720], "CC": [350, 720], "CD": [450, 720] 
+
+}; 
+
+const RAW_MODULE_BOXES = { 
+
+    "CHA": [190, 50, 410, 160], "CHB": [80, 160, 190, 380], "CHC": [410, 160, 520, 380], 
+
+    "MF": [190, 160, 410, 380], "LL": [80, 380, 520, 490], "Cooling": [250, 490, 350, 640], 
+
+    "CassA": [100, 640, 200, 770], "CassB": [200, 640, 300, 770], "CassC": [300, 640, 400, 770], "CassD": [400, 640, 500, 770] 
+
+}; 
+
+const RAW_LABEL_POS = { 
+
+    "CHA": [300, 70], "CHB": [135, 270], "CHC": [465, 270], "MF": [300, 210], 
+
+    "LL": [300, 400], "Cooling": [300, 510], "CassA": [150, 650], "CassB": [250, 650], "CassC": [350, 650], "CassD": [450, 650] 
+
+}; 
+
+let waferImages = { S1: null, S2: null }; 
+
+let historyStack = []; // 新增：用於記錄步驟的歷史陣列 
+
+let selectedSide = 'S1'; // 目前在管理視窗選中的側邊 
+
+let clickableRegions = []; 
+
+const canvas = document.getElementById('mainCanvas'); 
+
+const ctx = canvas.getContext('2d'); 
+
+// --- 2. 角度邏輯 --- 
+
+function getNodeAngle(mode, nodeName, cassName, side, startAngle) { 
+
+    if (["CA", "CB", "CC", "CD"].includes(nodeName)) return (startAngle) % 360; 
+
+    let lookupName = (nodeName === "MF1") ? "LL1" : (nodeName === "MF2" ? "LL2" : nodeName); 
+
+    let rules = {}; 
+
+    if (mode === "FI5.X") { 
+
+        if (["A", "B"].includes(cassName)) { 
+
+            rules = (side === "S1") ? {"LL1": 210, "A1": 30, "B1": 300, "C1": 120, "CS": 0} : {"CS": 300, "LL2": 0, "A2": 180, "B2": 90, "C2": 270}; 
+
+        } else { 
+
+            rules = (side === "S1") ? {"CS": 30, "LL1": 0, "A1": 180, "B1": 90, "C1": 270} : {"LL2": 150, "A2": 330, "B2": 240, "C2": 60, "CS": 0}; 
+
+        } 
+
+    } else { // FI6.4 
+
+        if (["A", "B"].includes(cassName)) { 
+
+            rules = (side === "S1") ? {"LL1": 195, "A1": 15, "B1": 285, "C1": 105, "CS": 0} : {"CS": 255, "LL2": 345, "A2": 165, "B2": 75, "C2": 255}; 
+
+        } else { 
+
+            rules = (side === "S1") ? {"CS": 105, "LL1": 15, "A1": 195, "B1": 105, "C1": 285} : {"LL2": 165, "A2": 345, "B2": 255, "C2": 75, "CS": 0}; 
+
+        } 
+
+    } 
+
+    return ( (rules[lookupName] || 0) + startAngle ) % 360; 
+
+} 
+
+function getFullPath(cassName, side, station) { 
+
+    let path = [`C${cassName}`]; 
+
+    if ((["A", "B"].includes(cassName) && side === "S2") || (["C", "D"].includes(cassName) && side === "S1")) path.push("CS"); 
+
+    path.push(side === "S1" ? "LL1" : "LL2"); 
+
+    if (station !== "LL") { 
+
+        path.push(side === "S1" ? "MF1" : "MF2"); 
+
+        let target = {"CHA":"A", "CHB":"B", "CHC":"C"}[station]; 
+
+        path.push(`${target}${side === "S1" ? '1' : '2'}`); 
+
+    } 
+
+    return path; 
+
+} 
+
+// --- 3. 繪圖核心與幾何裁切 --- 
+
+function draw() { 
+
+    canvas.width = REF_W; canvas.height = REF_H; 
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height); 
+
+    clickableRegions = []; 
+
+    const mode = document.getElementById('mode').value, selC = document.getElementById('cass').value, 
+
+          selS = document.getElementById('side').value, selSt = document.getElementById('station').value, 
+
+          baseAngle = parseInt(document.getElementById('offset').value) || 0; 
+
+    const pathS1 = getFullPath(selC, "S1", selSt), pathS2 = getFullPath(selC, "S2", selSt); 
+
+    ctx.strokeStyle = "#0015D1"; ctx.lineWidth = 1.5; ctx.fillStyle = "#5C6BC0"; ctx.font = "bold 13px Segoe UI"; ctx.textAlign = "center"; 
+
+    for (let name in RAW_MODULE_BOXES) { 
+
+        let b = RAW_MODULE_BOXES[name]; ctx.strokeRect(b[0], b[1], b[2]-b[0], b[3]-b[1]); 
+
+        let lp = RAW_LABEL_POS[name] || [(b[0]+b[2])/2, b[1]+18]; ctx.fillText(name, lp[0], lp[1]); 
+
+    } 
+
+    for (let name in RAW_WAFER_POS) { 
+
+        let [cx, cy] = RAW_WAFER_POS[name]; 
+
+        let showS1 = pathS1.includes(name) && (waferImages.S1 || selS === "S1"), showS2 = pathS2.includes(name) && (waferImages.S2 || selS === "S2"); 
+
+        let sideToDraw = (showS1 && showS2) ? selS : (showS1 ? "S1" : (showS2 ? "S2" : null)), isInPath = sideToDraw !== null; 
+
+        let angle = getNodeAngle(mode, name, selC, sideToDraw || selS, baseAngle), displayAngle = (180 + angle) % 360; 
+
+        ctx.beginPath(); ctx.arc(cx, cy, REF_WAFER_R, 0, Math.PI * 2); 
+
+        ctx.fillStyle = isInPath ? "white" : "#F0F4F7"; ctx.fill(); 
+
+        ctx.strokeStyle = "#BDC3C7"; ctx.lineWidth = 1; ctx.stroke(); 
+
+        if (isInPath && waferImages[sideToDraw]) { 
+
+            drawClippedWafer(ctx, waferImages[sideToDraw], cx, cy, REF_WAFER_R, displayAngle); 
+
+        } else { ctx.fillStyle = isInPath ? "#2C3E50" : "#BDC3C7"; ctx.font = "11px Segoe UI"; ctx.fillText(name, cx, cy + 4); } 
+
+        // --- Notch 指示器繪製 --- 
+
+        let notchRad = ( (90 + displayAngle) * Math.PI ) / 180; 
+
+        let ex = cx + REF_WAFER_R * Math.cos(notchRad); 
+
+        let ey = cy + REF_WAFER_R * Math.sin(notchRad); 
+
+        let p1x = cx + (REF_WAFER_R - 9) * Math.cos(notchRad); 
+
+        let p1y = cy + (REF_WAFER_R - 9) * Math.sin(notchRad); 
+
+        ctx.beginPath(); 
+
+        ctx.moveTo(p1x, p1y); 
+
+        ctx.lineTo(ex + 4 * Math.sin(notchRad), ey - 4 * Math.cos(notchRad)); 
+
+        ctx.lineTo(ex - 4 * Math.sin(notchRad), ey + 4 * Math.cos(notchRad)); 
+
+        ctx.closePath(); 
+
+        ctx.fillStyle = "#F44336"; ctx.fill(); 
+
+        if (isInPath) { 
+
+            ctx.beginPath(); ctx.arc(cx, cy, REF_WAFER_R + 1.5, 0, Math.PI * 2); 
+
+            ctx.strokeStyle = "#D32F2F"; ctx.lineWidth = 2; ctx.stroke(); 
+
+            ctx.fillStyle = "#D32F2F"; ctx.font = "bold 13px Segoe UI"; ctx.fillText(`${angle}°`, cx, cy - REF_WAFER_R - 10); 
+
+        } 
+
+        clickableRegions.push({ name, cx, cy, angle, side: sideToDraw || selS }); 
+
+    } 
+
+} 
+
+function drawClippedWafer(targetCtx, img, cx, cy, r, rotAngle) { 
+
+    targetCtx.save(); targetCtx.beginPath(); targetCtx.arc(cx, cy, r, 0, Math.PI * 2); targetCtx.clip(); 
+
+    targetCtx.translate(cx, cy); targetCtx.rotate(rotAngle * Math.PI / 180); 
+
+    // 設定為 0.94，平衡滿版感與邊緣數據完整度 
+
+    let minDim = Math.min(img.width, img.height); 
+
+    let cropSize = minDim * 1.01; 
+
+    targetCtx.drawImage(img, (img.width - cropSize) / 2, (img.height - cropSize) / 2, cropSize, cropSize, -r, -r, r * 2, r * 2); 
+
+    targetCtx.restore(); 
+
+} 
+
+// --- 4. 放大視窗互動與幾何修正 --- 
+
+canvas.addEventListener('click', (e) => { 
+
+    const rect = canvas.getBoundingClientRect(); 
+
+    const x = (e.clientX - rect.left) * (REF_W / rect.width), y = (e.clientY - rect.top) * (REF_H / rect.height); 
+
+    clickableRegions.forEach(reg => { if (Math.sqrt((x - reg.cx)**2 + (y - reg.cy)**2) < REF_WAFER_R) showZoom(reg); }); 
+
+}); 
+
+function showZoom(reg) { 
+
+    const zCvs = document.getElementById('zoomCanvas'), zCtx = zCvs.getContext('2d'), img = waferImages[reg.side]; 
+
+    zCtx.clearRect(0, 0, 500, 500); 
+
+    let cx = 250, cy = 250; 
+
+    let wafer_zoom_r = 210; 
+
+    let angle = reg.angle; 
+
+    let displayAngleForZoom = (180 + angle) % 360; 
+
+    // 根據視角修正旋轉角度，讓 CHA, CHB, CHC 的 Slit Valve 可以在 12 點鐘方向 
+
+    let viewRotation = 0; 
+
+    if (["A1", "A2"].includes(reg.name)) viewRotation = 180; // CHA 原本在上方(視角需轉180度對正) 
+
+    else if (["B1", "B2"].includes(reg.name)) viewRotation = -90; // CHB 原本在右側(3點)，移到 12 點鐘需逆時針轉 90 度 
+
+    else if (["C1", "C2"].includes(reg.name)) viewRotation = 90; // CHC 原本在左側(9點)，移到 12 點鐘需順時針轉 90 度 
+
+    displayAngleForZoom = (displayAngleForZoom + viewRotation + 360) % 360; 
+
+    zCtx.beginPath(); 
+
+    zCtx.arc(cx, cy, wafer_zoom_r, 0, Math.PI * 2); 
+
+    zCtx.fillStyle = "#fff"; 
+
+    zCtx.fill(); 
+
+    if (img) drawClippedWafer(zCtx, img, cx, cy, wafer_zoom_r, displayAngleForZoom); 
+
+    zCtx.beginPath(); 
+
+    zCtx.arc(cx, cy, wafer_zoom_r, 0, Math.PI * 2); 
+
+    zCtx.lineWidth = 1; 
+
+    zCtx.strokeStyle = "black"; 
+
+    zCtx.stroke(); 
+
+    const sv_config = { 
+
+        "A1": { x: cx, y: 15, rot: 0 }, 
+
+        "A2": { x: cx, y: 15, rot: 0 }, 
+
+        "B1": { x: cx, y: 15, rot: 0 }, 
+
+        "B2": { x: cx, y: 15, rot: 0 }, 
+
+        "C1": { x: cx, y: 15, rot: 0 }, 
+
+        "C2": { x: cx, y: 15, rot: 0 }, 
+
+        "LL1": { x: cx, y: 15, rot: 0 }, 
+
+        "LL2": { x: cx, y: 15, rot: 0 } 
+
+    }; 
+
+    if (sv_config[reg.name]) { 
+
+        let cfg = sv_config[reg.name]; 
+
+        zCtx.save(); 
+
+        zCtx.translate(cfg.x, cfg.y); 
+
+        zCtx.rotate(cfg.rot * Math.PI / 180); 
+
+        let barW = 300, barH = 40; 
+
+        zCtx.fillStyle = "#4AA3FF"; 
+
+        zCtx.fillRect(-barW/2, -barH/2, barW, barH); 
+
+        zCtx.textAlign = "center"; zCtx.textBaseline = "middle"; 
+
+        zCtx.fillStyle = "white"; zCtx.font = "bold 16px Arial"; 
+
+        zCtx.fillText("SLIT VALVE", 0, -7); 
+
+        zCtx.fillStyle = "black"; zCtx.font = "bold 13px Arial"; 
+
+        zCtx.fillText(`Station: ${reg.name} | Rotation: ${reg.angle}°`, 0, 9); 
+
+        zCtx.restore(); 
+
+    } 
+
+    document.getElementById('zoomTitle').innerText = `Node: ${reg.name} | Source: ${reg.side}`; 
+
+    document.getElementById('zoomInfo').innerText = `Robot Angle: ${reg.angle}°`; 
+
+    toggleModal('zoomModal', true); 
+
+} 
+
+// --- 5. 圖片管理與歷史復原系統 --- 
+
+function saveState() { 
+
+    // 儲存當下狀態到歷史陣列中 (限制記錄前 20 步) 
+
+    historyStack.push({ S1: waferImages.S1, S2: waferImages.S2 }); 
+
+    if (historyStack.length > 20) historyStack.shift(); 
+
+} 
+
+function undo() { 
+
+    if (historyStack.length > 0) { 
+
+        let prevState = historyStack.pop(); 
+
+        waferImages.S1 = prevState.S1; 
+
+        waferImages.S2 = prevState.S2; 
+
+        updateMgrPreview('S1'); 
+
+        updateMgrPreview('S2'); 
+
+        draw(); 
+
+    } else { 
+
+        alert("目前沒有可以復原的步驟！"); 
+
+    } 
+
+} 
+
+function clearAllImages() { 
+
+    saveState(); 
+
+    waferImages.S1 = null; 
+
+    waferImages.S2 = null; 
+
+    updateMgrPreview('S1'); 
+
+    updateMgrPreview('S2'); 
+
+    draw(); 
+
+} 
+
+function toggleModal(id, s) { document.getElementById(id).style.display = s ? 'block' : 'none'; } 
+
+function handleFile(i, s) { if (i.files[0]) { let r = new FileReader(); r.onload=(e)=>loadImgToSide(e.target.result,s); r.readAsDataURL(i.files[0]); } } 
+
+function loadImgToSide(d, s) { 
+
+    saveState(); // 變更前儲存狀態 
+
+    let i = new Image(); i.onload=()=>{ waferImages[s]=i; updateMgrPreview(s); draw(); }; i.src=d; 
+
+} 
+
+function updateMgrPreview(s) { 
+
+    document.getElementById(`pre-${s}`).innerHTML = waferImages[s] ? `<img src="${waferImages[s].src}">` : "尚未載入"; 
+
+} 
+
+function selectSide(s) { 
+
+    selectedSide = s; 
+
+    document.getElementById('card-S1').classList.toggle('selected', s === 'S1'); 
+
+    document.getElementById('card-S2').classList.toggle('selected', s === 'S2'); 
+
+} 
+
+function clearImg(s) { 
+
+    saveState(); // 變更前儲存狀態 
+
+    waferImages[s]=null; updateMgrPreview(s); draw(); 
+
+} 
+
+async function pasteToSide(s) { 
+
+    try { 
+
+        const items = await navigator.clipboard.read(); 
+
+        for (const item of items) { 
+
+            if (item.types.includes('image/png') || item.types.includes('image/jpeg')) { 
+
+                const blob = await item.getType(item.types.find(t=>t.startsWith('image/'))); 
+
+                const r = new FileReader(); r.onload=(e)=>loadImgToSide(e.target.result,s); r.readAsDataURL(blob); 
+
+            } 
+
+        } 
+
+    } catch(err) { 
+
+        // 如果 API 失敗，提醒用戶可以使用 Ctrl+V 
+
+        console.warn("Clipboard API failed, fallback to native paste event."); 
+
+        alert("瀏覽器權限受限，請直接點擊藍框框後按 Ctrl+V 貼上即可。"); 
+
+    } 
+
+} 
+
+window.addEventListener('paste', (e) => { 
+
+    // 優先使用管理視窗選中的側邊，如果沒開彈窗則使用主網頁下拉選單的 side 
+
+    const isModalOpen = document.getElementById('mgrModal').style.display === 'block'; 
+
+    const s = isModalOpen ? selectedSide : document.getElementById('side').value; 
+
+    const items = (e.clipboardData || e.originalEvent.clipboardData).items; 
+
+    for (const item of items) { if (item.kind === 'file' && item.type.startsWith('image/')) { let r = new FileReader(); r.onload=(ev)=>loadImgToSide(ev.target.result,s); r.readAsDataURL(item.getAsFile()); break; } } 
+
+}); 
+
+['mode', 'cass', 'side', 'station', 'offset'].forEach(id => { 
+
+    document.getElementById(id).addEventListener('change', draw); 
+
+    document.getElementById(id).addEventListener('input', draw); 
+
+}); 
+
+window.onload = draw; 
+</script> 
+</body> 
+</html>
+ 

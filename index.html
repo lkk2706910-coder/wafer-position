@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wafer Match Tool v4.1 (Readable Labels)</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; background-color: #f0f0f0; overflow: hidden; }
+        #ctrl-panel { background-color: #fff; padding: 10px; display: flex; align-items: center; flex-wrap: wrap; border-bottom: 1px solid #ccc; gap: 8px; font-size: 13px; }
+        
+        .ctrl-group { display: flex; align-items: center; gap: 5px; background: #f9f9f9; padding: 3px 6px; border-radius: 4px; border: 1px solid #eee; }
+        .ctrl-group label { font-weight: bold; color: #555; }
+        
+        select, input[type="number"], button { padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
+        input[type="number"] { width: 50px; }
+        button { background-color: #E3F2FD; font-weight: bold; cursor: pointer; border: 1px solid #90CAF9; }
+        button:hover { background-color: #BBDEFB; }
+        
+        #canvas-container { flex-grow: 1; position: relative; background-color: white; margin: 10px; border: 1px solid #ddd; display: flex; justify-content: center; align-items: center; overflow: hidden; }
+        #modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
+        #modal-content { background: white; padding: 10px; border-radius: 8px; position: relative; text-align: center; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        #close-btn { position: absolute; top: 5px; right: 10px; font-size: 24px; cursor: pointer; color: #aaa; }
+        #close-btn:hover { color: black; }
+        #popup-title { margin: 5px 0 10px 0; font-weight: bold; font-size: 16px; }
+    </style>
+</head>
+<body>
+
+    <div id="ctrl-panel">
+        <div class="ctrl-group">
+            <label>Mode:</label>
+            <select id="mode"><option value="FI5.X">FI5.X</option><option value="FI6.4">FI6.4</option></select>
+        </div>
+        <div class="ctrl-group">
+            <label>Loc:</label>
+            <select id="cass"><option value="A">A</option><option value="B">B</option><option value="C">C</option><option value="D">D</option></select>
+            <select id="side"><option value="S1">S1</option><option value="S2">S2</option></select>
+            <select id="station"><option value="LL">LL</option><option value="CHA">CHA</option><option value="CHB">CHB</option><option value="CHC">CHC</option></select>
+        </div>
+        <div class="ctrl-group">
+            <label>Angle Off:</label>
+            <input type="number" id="offset" value="0">
+        </div>
+        
+        <button onclick="document.getElementById('file-input').click()">Upload Image</button>
+        <input type="file" id="file-input" accept="image/*" style="display: none;" onchange="handleUpload(this)">
+        <span style="color: #666; font-size: 11px;">(Auto-Centers Wafer)</span>
+    </div>
+
+    <div id="canvas-container">
+        <canvas id="mainCanvas"></canvas>
+    </div>
+
+    <div id="modal-overlay" onclick="closePopup(event)">
+        <div id="modal-content" onclick="event.stopPropagation()">
+            <div id="close-btn" onclick="closePopup(null)">&times;</div>
+            <div id="popup-title">Zoom View</div>
+            <canvas id="popupCanvas" width="550" height="550"></canvas>
+        </div>
+    </div>
+
+<script>
+    // ----------------- 1. Global Config -----------------
+    const REF_W = 600, REF_H = 750, REF_WAFER_R = 45;
+    const ZOOM_FACTOR = 0.85; 
+
+    const RAW_WAFER_POS = {
+        "A2": [245, 55], "A1": [355, 55], "B1": [135, 165], "B2": [135, 275],
+        "C2": [465, 165], "C1": [465, 275], "LL1": [200, 385], "LL2": [400, 385],
+        "CS": [300, 515], "CA": [150, 670], "CB": [250, 670], "CC": [350, 670], "CD": [450, 670]
+    };
+    const RAW_MODULE_BOXES = {
+        "CHA": [190, 0, 410, 110], "CHB": [80, 110, 190, 330], "CHC": [410, 110, 520, 330],
+        "MF": [190, 110, 410, 330], "LL": [80, 330, 520, 440], "Cooling": [250, 440, 350, 590],
+        "CassA": [100, 590, 200, 720], "CassB": [200, 590, 300, 720], "CassC": [300, 590, 400, 720], "CassD": [400, 590, 500, 720]
+    };
+    const RAW_LABEL_POS = {
+        "CHA": [300, 20], "CHB": [135, 220], "CHC": [465, 220], "MF": [300, 220],
+        "LL": [300, 350], "Cooling": [300, 460], "CassA": [150, 600], "CassB": [250, 600], "CassC": [350, 600], "CassD": [450, 600]
+    };
+
+    // Store Image + Detected Crop Coordinates
+    let imgData = {
+        source: null,
+        cropX: 0,
+        cropY: 0,
+        cropSize: 0
+    };
+    
+    let clickRegions = [];
+
+    function toRad(deg) { return deg * Math.PI / 180; }
+
+    // ----------------- 2. Angle Logic -----------------
+    function getNodeAngle(mode, nodeName, cassName, side, startAngle) {
+        if (["CA", "CB", "CC", "CD"].includes(nodeName)) return startAngle % 360;
+        
+        let rules = {};
+        if (mode === "FI5.X") {
+            if (["A", "B"].includes(cassName)) {
+                rules = (side === "S1") 
+                    ? {"LL1": 210, "A1": 30, "B1": 300, "C1": 120, "CS": 0} 
+                    : {"CS": 300, "LL2": 0, "A2": 180, "B2": 90, "C2": 270};
+            } else {
+                rules = (side === "S1")
+                    ? {"CS": 30, "LL1": 0, "A1": 180, "B1": 90, "C1": 270}
+                    : {"LL2": 150, "A2": 330, "B2": 240, "C2": 60, "CS": 0};
+            }
+        } else { // FI6.4
+            if (["A", "B"].includes(cassName)) {
+                rules = (side === "S1")
+                    ? {"LL1": 195, "A1": 15, "B1": 285, "C1": 105, "CS": 0}
+                    : {"CS": 255, "LL2": 345, "A2": 165, "B2": 75, "C2": 255};
+            } else {
+                rules = (side === "S1")
+                    ? {"CS": 105, "LL1": 15, "A1": 195, "B1": 105, "C1": 285}
+                    : {"LL2": 165, "A2": 345, "B2": 255, "C2": 75, "CS": 0};
+            }
+        }
+        return (rules[nodeName] !== undefined ? rules[nodeName] : 0) + startAngle % 360;
+    }
+
+    function getFullPath(cassName, side, station) {
+        let path = [`C${cassName}`];
+        if ((["A", "B"].includes(cassName) && side === "S2") || (["C", "D"].includes(cassName) && side === "S1")) {
+            path.push("CS");
+        }
+        path.push(side === "S1" ? "LL1" : "LL2");
+        if (station !== "LL") {
+            const targetMap = {"CHA":"A", "CHB":"B", "CHC":"C"};
+            let target = targetMap[station];
+            if (target) path.push(`${target}${side === "S1" ? '1' : '2'}`);
+        }
+        return path;
+    }
+
+    // ----------------- 3. Auto-Crop Algorithm -----------------
+    // Scans the image to find the actual circle boundaries, ignoring whitespace/banners
+    function detectWaferBounds(img) {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        
+        const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        const w = canvas.width;
+        const h = canvas.height;
+        
+        // Helper: Check if pixel is "white" (background)
+        const isWhite = (idx) => pixels[idx] > 240 && pixels[idx+1] > 240 && pixels[idx+2] > 240;
+
+        // Scan Strategy: Start from center and move outwards until we hit white gap
+        const cx = Math.floor(w / 2);
+        const cy = Math.floor(h / 2);
+        
+        let top = 0, bottom = h, left = 0, right = w;
+
+        // Scan Up
+        for (let y = cy; y >= 0; y--) {
+            const idx = (y * w + cx) * 4;
+            // Check for a continuous block of white to avoid small holes in map
+            if (isWhite(idx)) {
+                // Peek ahead 10 pixels to confirm it's really the edge
+                let isGap = true;
+                for(let k=1; k<15; k++) { if (y-k >=0 && !isWhite(((y-k)*w+cx)*4)) isGap = false; }
+                if(isGap) { top = y; break; }
+            }
+        }
+
+        // Scan Down
+        for (let y = cy; y < h; y++) {
+            const idx = (y * w + cx) * 4;
+            if (isWhite(idx)) {
+                let isGap = true;
+                for(let k=1; k<15; k++) { if (y+k < h && !isWhite(((y+k)*w+cx)*4)) isGap = false; }
+                if(isGap) { bottom = y; break; }
+            }
+        }
+        
+        const midY = Math.floor((top + bottom) / 2);
+
+        // Scan Left (at the calculated vertical center)
+        for (let x = cx; x >= 0; x--) {
+            const idx = (midY * w + x) * 4;
+            if (isWhite(idx)) {
+                let isGap = true;
+                for(let k=1; k<15; k++) { if (x-k >=0 && !isWhite((midY*w + (x-k))*4)) isGap = false; }
+                if(isGap) { left = x; break; }
+            }
+        }
+
+        // Scan Right
+        for (let x = cx; x < w; x++) {
+            const idx = (midY * w + x) * 4;
+            if (isWhite(idx)) {
+                let isGap = true;
+                for(let k=1; k<15; k++) { if (x+k < w && !isWhite((midY*w + (x+k))*4)) isGap = false; }
+                if(isGap) { right = x; break; }
+            }
+        }
+
+        // Calculate Square Crop
+        const waverW = right - left;
+        const waferH = bottom - top;
+        // Use the larger dimension to ensure we don't cut off sides if circle is slightly oval
+        const size = Math.max(waverW, waferH); 
+        
+        // Center the crop box based on detected bounds
+        const finalX = left + (waverW / 2) - (size / 2);
+        const finalY = top + (waferH / 2) - (size / 2);
+
+        return { x: finalX, y: finalY, size: size };
+    }
+
+    // ----------------- 4. Drawing Logic -----------------
+    function drawCircularWafer(ctx, x, y, r, displayAngle) {
+        if (!imgData.source) return;
+        
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.translate(x, y);
+        ctx.rotate(toRad(displayAngle)); 
+        
+        // Use detected crop coordinates
+        ctx.drawImage(
+            imgData.source, 
+            imgData.cropX, imgData.cropY, imgData.cropSize, imgData.cropSize, // Source Crop
+            -r, -r, r * 2, r * 2 // Destination
+        );
+        
+        ctx.restore();
+
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.strokeStyle = "black";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+    }
+
+    function drawLayout() {
+        const canvas = document.getElementById('mainCanvas');
+        const container = document.getElementById('canvas-container');
+        canvas.width = container.clientWidth;
+        canvas.height = container.clientHeight;
+        const W = canvas.width, H = canvas.height;
+        const ctx = canvas.getContext('2d');
+        if (W < 10) return;
+
+        const fitScale = Math.min(W / REF_W, H / REF_H) * ZOOM_FACTOR;
+        const actualW = REF_W * fitScale, actualH = REF_H * fitScale;
+        const offsetX = (W - actualW) / 2, offsetY = (H - actualH) / 2;
+        const tx = (val) => val * fitScale + offsetX;
+        const ty = (val) => val * fitScale + offsetY;
+        const curR = REF_WAFER_R * fitScale;
+
+        ctx.clearRect(0, 0, W, H);
+        clickRegions = [];
+
+        const mode = document.getElementById('mode').value;
+        const selC = document.getElementById('cass').value;
+        const selS = document.getElementById('side').value;
+        const selSt = document.getElementById('station').value;
+        const offsetVal = parseInt(document.getElementById('offset').value) || 0;
+
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "#0015D1";
+        
+        // Modules
+        for (const [name, box] of Object.entries(RAW_MODULE_BOXES)) {
+            const rx1 = tx(box[0]), ry1 = ty(box[1]);
+            const rW = (box[2] - box[0]) * fitScale, rH = (box[3] - box[1]) * fitScale;
+            ctx.strokeRect(rx1, ry1, rW, rH);
+            let lx = rx1 + rW/2, ly = ry1;
+            if (RAW_LABEL_POS[name]) { lx = tx(RAW_LABEL_POS[name][0]); ly = ty(RAW_LABEL_POS[name][1]); }
+            ctx.fillStyle = "#5C6BC0";
+            ctx.font = `bold ${Math.max(10, Math.floor(9 * fitScale * 1.5))}px Arial`;
+            ctx.textAlign = "center";
+            ctx.fillText(name, lx, ly);
+        }
+
+        const fullPath = getFullPath(selC, selS, selSt);
+        
+        // Wafers
+        for (const [name, pos] of Object.entries(RAW_WAFER_POS)) {
+            const cx = tx(pos[0]), cy = ty(pos[1]);
+            const angle = getNodeAngle(mode, name, selC, selS, offsetVal);
+            const displayAngle = (180 + angle) % 360;
+            const isInPath = fullPath.includes(name);
+
+            clickRegions.push({ name: name, x: cx, y: cy, r: curR, angle: angle });
+
+            ctx.beginPath();
+            ctx.arc(cx, cy, curR, 0, Math.PI * 2);
+            ctx.fillStyle = isInPath ? "#FFFFFF" : "#E0FFFF";
+            ctx.fill();
+            ctx.strokeStyle = "#888888";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            if (isInPath && imgData.source) {
+                drawCircularWafer(ctx, cx, cy, curR, displayAngle);
+            } else {
+                ctx.fillStyle = isInPath ? "black" : "#BBBBBB";
+                ctx.font = `${Math.max(10, Math.floor(9 * fitScale * 1.5))}px Arial`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(name, cx, cy);
+            }
+
+            // Direction Arrow
+            const rad = toRad(90 + displayAngle);
+            const nLen = 9 * fitScale, wOff = 4 * fitScale;
+            const ex = cx + curR * Math.cos(rad), ey = cy + curR * Math.sin(rad);
+            const p1x = cx + (curR - nLen) * Math.cos(rad), p1y = cy + (curR - nLen) * Math.sin(rad);
+            const perpX = Math.sin(rad), perpY = -Math.cos(rad);
+
+            ctx.beginPath();
+            ctx.moveTo(p1x, p1y);
+            ctx.lineTo(ex - wOff * perpX, ey - wOff * perpY);
+            ctx.lineTo(ex + wOff * perpX, ey + wOff * perpY);
+            ctx.closePath();
+            ctx.fillStyle = "#F44336";
+            ctx.fill();
+
+            if (isInPath) {
+                ctx.beginPath();
+                ctx.arc(cx, cy, curR + 2, 0, Math.PI * 2);
+                ctx.strokeStyle = "#FF5252";
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.fillStyle = "#D32F2F";
+                ctx.font = `bold ${Math.max(10, Math.floor(10 * fitScale * 1.5))}px Arial`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "bottom";
+                ctx.fillText(`${angle}°`, cx, cy - curR - 5);
+            }
+        }
+    }
+
+    // ----------------- 5. Popup Logic -----------------
+    function showPopup(nodeName, angle) {
+        if (!imgData.source) return;
+        const modal = document.getElementById('modal-overlay');
+        const ctx = document.getElementById('popupCanvas').getContext('2d');
+        const cx = 275, cy = 275;
+        modal.style.display = 'flex';
+        
+        // 1. View Rotation Logic
+        let viewRotation = 0;
+        if (["A1", "A2"].includes(nodeName)) viewRotation = 180;
+        else if (["B1", "B2"].includes(nodeName)) viewRotation = 270;
+        else if (["C1", "C2"].includes(nodeName)) viewRotation = 90; 
+
+        document.getElementById('popup-title').innerText = `Station: ${nodeName} | Rot: ${angle}° (View: ${viewRotation === 270 ? -90 : viewRotation}°)`;
+        ctx.clearRect(0, 0, 550, 550);
+        
+        // 2. Draw Wafer
+        let finalImgAngle = (180 + angle + viewRotation) % 360;
+        drawCircularWafer(ctx, cx, cy, 210, finalImgAngle); 
+
+        // 3. Draw Slit Valve Label
+        let targetKey = null;
+        if (["LL1", "LL2"].includes(nodeName)) targetKey = "LL";
+        else if (["A1", "A2"].includes(nodeName)) targetKey = "A";
+        else if (["B1", "B2"].includes(nodeName)) targetKey = "B";
+        else if (["C1", "C2"].includes(nodeName)) targetKey = "C";
+
+        if (targetKey) {
+            ctx.save();
+            ctx.translate(cx, cy); // Move to center
+            
+            ctx.fillStyle = "#3B9CFF";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.font = "bold 11px Arial";
+
+            if (targetKey === "A") { 
+                // Position: Top
+                ctx.fillRect(-180, -262.5, 360, 25); 
+                ctx.fillStyle = "white";
+                ctx.fillText("SLIT VALVE", 0, -250);
+            } 
+            else if (targetKey === "LL") { 
+                // Position: Top
+                ctx.fillRect(-180, -262.5, 360, 25);
+                ctx.fillStyle = "white";
+                ctx.fillText("SLIT VALVE", 0, -250);
+            }
+            else if (targetKey === "B") {
+                // Position: Top
+                ctx.fillRect(-180, -262.5, 360, 25); 
+                ctx.fillStyle = "white";
+                ctx.fillText("SLIT VALVE", 0, -250)
+            }
+            else if (targetKey === "C") {
+                // Position: Top
+                ctx.fillRect(-180, -262.5, 360, 25); 
+                ctx.fillStyle = "white";
+                ctx.fillText("SLIT VALVE", 0, -250)
+            }
+
+            ctx.restore();
+        }
+    }
+
+    function closePopup(e) { document.getElementById('modal-overlay').style.display = 'none'; }
+    function handleUpload(input) {
+        if (input.files && input.files[0]) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() { 
+                    const bounds = detectWaferBounds(img);
+                    imgData = {
+                        source: img,
+                        cropX: bounds.x,
+                        cropY: bounds.y,
+                        cropSize: bounds.size
+                    };
+                    drawLayout(); 
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(input.files[0]);
+        }
+    }
+    window.addEventListener('paste', function(e) {
+        const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf('image') !== -1) {
+                const blob = items[i].getAsFile();
+                const reader = new FileReader();
+                reader.onload = function(evt) {
+                    const img = new Image();
+                    img.onload = function() { 
+                        const bounds = detectWaferBounds(img);
+                        imgData = {
+                            source: img,
+                            cropX: bounds.x,
+                            cropY: bounds.y,
+                            cropSize: bounds.size
+                        };
+                        drawLayout(); 
+                    };
+                    img.src = evt.target.result;
+                };
+                reader.readAsDataURL(blob);
+            }
+        }
+    });
+    document.getElementById('mainCanvas').addEventListener('click', function(e) {
+        const rect = this.getBoundingClientRect();
+        const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        for (const r of clickRegions) {
+            if (Math.hypot(mx-r.x, my-r.y) <= r.r) { showPopup(r.name, r.angle); break; }
+        }
+    });
+    
+    const inputs = document.querySelectorAll('select, input[type="number"]');
+    inputs.forEach(el => el.addEventListener('change', drawLayout));
+    inputs.forEach(el => el.addEventListener('input', drawLayout));
+    window.addEventListener('resize', drawLayout);
+    window.onload = drawLayout;
+</script>
+</body>
+</html>
