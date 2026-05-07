@@ -202,17 +202,17 @@ function getNodeAngle(mode, nodeName, cassName, side, startAngle) {
   if (mode === "FI5.X") {
     if (["A", "B"].includes(cassName)) {
       rules = (side === "S1")
-        ? {"LL1": 235, "A1": 30, "B1": 300, "C1": 120, "CS": 0, "FI_L": 180, "FI_R": 180}
+        ? {"LL1": 210, "A1": 30, "B1": 300, "C1": 120, "CS": 0, "FI_L": 180, "FI_R": 180}
         : {"CS": 280, "LL2": 0, "A2": 180, "B2": 90, "C2": 270, "FI_L": 180, "FI_R": 20};
     } else {
       rules = (side === "S1")
-        ? {"CS": 30, "LL1": 0, "A1": 180, "B1": 90, "C1": 270, "FI_L": 180, "FI_R": 180}
+        ? {"CS": 80, "LL1": 0, "A1": 180, "B1": 90, "C1": 270, "FI_L": 340, "FI_R": 180}
         : {"LL2": 150, "A2": 330, "B2": 240, "C2": 60, "CS": 0, "FI_L": 180, "FI_R": 180};
     }
   } else {
     if (["A", "B"].includes(cassName)) {
       rules = (side === "S1")
-        ? {"LL1": 235, "A1": 10, "B1": 280, "C1": 100, "CS": 0,   "FI_L": 180, "FI_R": 180}
+        ? {"LL1": 190, "A1": 10, "B1": 280, "C1": 100, "CS": 0,   "FI_L": 180, "FI_R": 180}
         : {"CS": 262, "LL2": 335, "A2": 155, "B2": 65, "C2": 245,  "FI_L": 180, "FI_R": 345};
     } else {
       rules = (side === "S1")
@@ -494,7 +494,7 @@ function renderZoomView(ctx, canvasW, canvasH, reg) {
     }
 
     if (reg.name === "LL1") {
-      [60, 130, 240, 270, 310].forEach(deg => drawArchContact(ctx, cx, cy, wafer_zoom_r, deg));
+      [60, 130, 235, 270, 310].forEach(deg => drawArchContact(ctx, cx, cy, wafer_zoom_r, deg));
     }
     if (reg.name === "LL2") {
       [220, 285, 45, 80, 120].forEach(deg => drawArchContact(ctx, cx, cy, wafer_zoom_r, deg));
