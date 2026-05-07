@@ -202,7 +202,7 @@ function getNodeAngle(mode, nodeName, cassName, side, startAngle) {
   if (mode === "FI5.X") {
     if (["A", "B"].includes(cassName)) {
       rules = (side === "S1")
-        ? {"LL1": 235, "A1": 30, "B1": 300, "C1": 120, "CS": 0, "FI_L": 180, "FI_R": 20}
+        ? {"LL1": 235, "A1": 30, "B1": 300, "C1": 120, "CS": 0, "FI_L": 180, "FI_R": 180}
         : {"CS": 280, "LL2": 0, "A2": 180, "B2": 90, "C2": 270, "FI_L": 180, "FI_R": 20};
     } else {
       rules = (side === "S1")
