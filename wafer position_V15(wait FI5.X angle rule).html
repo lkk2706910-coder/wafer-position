@@ -203,10 +203,10 @@ function getNodeAngle(mode, nodeName, cassName, side, startAngle) {
     if (["A", "B"].includes(cassName)) {
       rules = (side === "S1")
         ? {"LL1": 210, "A1": 30, "B1": 300, "C1": 120, "CS": 0, "FI_L": 180, "FI_R": 180}
-        : {"CS": 300, "LL2": 0, "A2": 180, "B2": 90, "C2": 270, "FI_L": 180, "FI_R": 180};
+        : {"CS": 280, "LL2": 0, "A2": 180, "B2": 90, "C2": 270, "FI_L": 180, "FI_R": 20};
     } else {
       rules = (side === "S1")
-        ? {"CS": 30, "LL1": 0, "A1": 180, "B1": 90, "C1": 270, "FI_L": 180, "FI_R": 180}
+        ? {"CS": 80, "LL1": 0, "A1": 180, "B1": 90, "C1": 270, "FI_L": 340, "FI_R": 180}
         : {"LL2": 150, "A2": 330, "B2": 240, "C2": 60, "CS": 0, "FI_L": 180, "FI_R": 180};
     }
   } else {
