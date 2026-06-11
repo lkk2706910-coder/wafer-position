@@ -4,14 +4,15 @@
 <meta charset="UTF-8">
 <title>Wafer Match Tool v4.8 - 完美貼合版</title>
 <style>
-  body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f5f5f5; margin: 0; display: flex; flex-direction: column; align-items: center; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f5f5f5; margin: 0; display: flex; flex-direction: column; align-items: center; overflow-x: hidden; }
   #toolbar { background: white; padding: 12px; width: 100%; display: flex; flex-wrap: wrap; gap: 15px; align-items: center; justify-content: center; border-bottom: 2px solid #ddd; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-  #main-wrap { display: flex; align-items: flex-start; gap: 20px; margin: 20px; }
+  #scale-shell { width: 100%; display: flex; justify-content: center; align-items: flex-start; }
+  #main-wrap { display: flex; align-items: flex-start; gap: 20px; margin: 20px; transform-origin: top center; flex-shrink: 0; }
   #canvas-container { position: relative; background: white; box-shadow: 0 10px 30px rgba(0,0,0,0.15); border-radius: 8px; overflow: hidden; }
 
   /* 固定即時顯示區（緊貼主畫面右側） */
   #live-panel {
-    width: 480px;
+    width: 960px;
     background: #fff;
     border: 1px solid #ddd;
     border-radius: 10px;
@@ -67,7 +68,7 @@
   #btn-undo:hover { background: #757575; }
   canvas { display: block; }
   .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(3px); }
-  .modal-content { background: white; margin: 30px auto; padding: 25px; border-radius: 12px; width: 90%; max-width: 600px; text-align: center; position: relative; box-shadow: 0 20px 50px rgba(0,0,0,0.3); }
+  .modal-content { background: white; margin: 30px auto; padding: 25px; border-radius: 12px; width: 95%; max-width: 1080px; text-align: center; position: relative; box-shadow: 0 20px 50px rgba(0,0,0,0.3); }
   .close { position: absolute; right: 20px; top: 15px; font-size: 28px; cursor: pointer; color: #666; }
   .mgr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 15px; }
   .preview-box { width: 120px; height: 120px; background: #eee; margin: 15px auto; border: 1px solid #666; display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: 50%; box-shadow: inset 0 2px 5px rgba(0,0,0,0.1); }
@@ -101,17 +102,19 @@
   <button id="btn-clear-all" onclick="clearAllImages()">清除全部貼圖</button>
 </div>
 
-<div id="main-wrap">
-  <div id="canvas-container">
-    <canvas id="mainCanvas"></canvas>
-  </div>
+<div id="scale-shell">
+  <div id="main-wrap">
+    <div id="canvas-container">
+      <canvas id="mainCanvas"></canvas>
+    </div>
 
-  <div id="live-panel">
-    <h3>即時放大圖</h3>
-    <div id="live-title">hover 節點以顯示</div>
-    <canvas id="liveCanvas" width="460" height="460"></canvas>
-    <div id="live-info"></div>
-    <div id="live-hint">滑鼠移到任一節點上即可</div>
+    <div id="live-panel">
+      <h3>即時放大圖</h3>
+      <div id="live-title">hover 節點以顯示</div>
+      <canvas id="liveCanvas" width="920" height="460"></canvas>
+      <div id="live-info"></div>
+      <div id="live-hint">滑鼠移到任一節點上即可</div>
+    </div>
   </div>
 </div>
 
@@ -119,8 +122,8 @@
   <div class="modal-content">
     <span class="close" onclick="toggleModal('zoomModal', false)">&times;</span>
     <h3 id="zoomTitle" style="margin-bottom: 15px;">Node: -- | Source: --</h3>
-    <div style="position: relative; width: 500px; height: 500px; margin: 0 auto;">
-      <canvas id="zoomCanvas" width="500" height="500" style="background: #fff; border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.1);"></canvas>
+    <div style="position: relative; width: 1000px; height: 500px; margin: 0 auto; max-width: 100%;">
+      <canvas id="zoomCanvas" width="1000" height="500" style="background: #fff; border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.1); max-width: 100%; height: auto;"></canvas>
     </div>
     <p id="zoomInfo" style="font-size: 20px; margin-top: 20px; color: #D32F2F; font-weight: bold;"></p>
   </div>
@@ -202,17 +205,17 @@ function getNodeAngle(mode, nodeName, cassName, side, startAngle) {
   if (mode === "FI5.X") {
     if (["A", "B"].includes(cassName)) {
       rules = (side === "S1")
-        ? {"LL1": 235, "A1": 30, "B1": 300, "C1": 120, "CS": 0, "FI_L": 180, "FI_R": 180}
+        ? {"LL1": 210, "A1": 30, "B1": 300, "C1": 120, "CS": 0, "FI_L": 180, "FI_R": 180}
         : {"CS": 280, "LL2": 0, "A2": 180, "B2": 90, "C2": 270, "FI_L": 180, "FI_R": 20};
     } else {
       rules = (side === "S1")
-        ? {"CS": 30, "LL1": 0, "A1": 180, "B1": 90, "C1": 270, "FI_L": 180, "FI_R": 180}
+        ? {"CS": 80, "LL1": 0, "A1": 180, "B1": 90, "C1": 270, "FI_L": 340, "FI_R": 180}
         : {"LL2": 150, "A2": 330, "B2": 240, "C2": 60, "CS": 0, "FI_L": 180, "FI_R": 180};
     }
   } else {
     if (["A", "B"].includes(cassName)) {
       rules = (side === "S1")
-        ? {"LL1": 235, "A1": 10, "B1": 280, "C1": 100, "CS": 0,   "FI_L": 180, "FI_R": 180}
+        ? {"LL1": 190, "A1": 10, "B1": 280, "C1": 100, "CS": 0,   "FI_L": 180, "FI_R": 180}
         : {"CS": 262, "LL2": 335, "A2": 155, "B2": 65, "C2": 245,  "FI_L": 180, "FI_R": 345};
     } else {
       rules = (side === "S1")
@@ -405,126 +408,39 @@ canvas.addEventListener('mousemove', (e) => {
   }
 });
 
+function siblingForSide(name, side) {
+  const swap = {
+    "LL1":"LL2","A1":"A2","B1":"B2","C1":"C2","MF1":"MF2",
+    "LL2":"LL1","A2":"A1","B2":"B1","C2":"C1","MF2":"MF1"
+  };
+  if (!swap[name]) return name;
+  const naturalSide = name.endsWith("1") ? "S1" : "S2";
+  return naturalSide === side ? name : swap[name];
+}
+
 function renderZoomView(ctx, canvasW, canvasH, reg) {
-  const currentMode = document.getElementById('mode').value;
-  const img = waferImages[reg.side];
   ctx.clearRect(0, 0, canvasW, canvasH);
+  const currentMode = document.getElementById('mode').value;
 
-  const hasSV = ["A1","A2","B1","B2","C1","C2","LL1","LL2"].includes(reg.name);
-  const hasArch = ["LL1","LL2","CS"].includes(reg.name);
-  const hasFIOuter = reg.isFI;
+  const singleSideOnly = reg.isFI || reg.name === "CS" || ["CA","CB","CC","CD"].includes(reg.name);
 
-  const scale0 = canvasW / 500;
-  const svBarH = hasSV ? 40 * scale0 : 0;
-  const svTopMargin = hasSV ? 8 * scale0 : 0;
-  const reservedTop = hasSV ? (svBarH + svTopMargin * 2) : 12;
-
-  const archOuter = hasArch ? 20 : 0;
-  const sidePadding = Math.max(archOuter, 14);
-
-  const rFromW = (canvasW - 2 * sidePadding) / 2;
-  let rFromH;
-  if (hasFIOuter) {
-    rFromH = (canvasH - reservedTop - 14) / 2.18;
-  } else if (hasArch) {
-    rFromH = (canvasH - reservedTop - 30) / 2;
+  if (singleSideOnly) {
+    const halfW = canvasW / 2;
+    renderZoomPanel(ctx, halfW / 2, halfW, canvasH, reg, reg.side, reg.angle, false, reg.name);
   } else {
-    rFromH = (canvasH - reservedTop - 12) / 2;
-  }
-  const wafer_zoom_r = Math.min(rFromH, rFromW);
-
-  const cx = canvasW / 2;
-  let topExtra = 0;
-  if (reg.name === "CS") topExtra = 20;
-  const cy = reservedTop + topExtra + wafer_zoom_r;
-  const scale = wafer_zoom_r / 210;
-  let angle = reg.angle;
-  let displayAngleForZoom = (180 + angle) % 360;
-
-  if (!reg.isFI) {
-    let viewRotation = 0;
-    if (["A1", "A2"].includes(reg.name)) viewRotation = 180;
-    else if (["B1", "B2"].includes(reg.name)) viewRotation = -90;
-    else if (["C1", "C2"].includes(reg.name)) viewRotation = 90;
-    displayAngleForZoom = (displayAngleForZoom + viewRotation + 360) % 360;
-  }
-
-  ctx.beginPath();
-  ctx.arc(cx, cy, wafer_zoom_r, 0, Math.PI * 2);
-  ctx.fillStyle = "#fff"; ctx.fill();
-  
-  if (img) drawClippedWafer(ctx, img, cx, cy, wafer_zoom_r, displayAngleForZoom);
-  
-  ctx.beginPath(); ctx.arc(cx, cy, wafer_zoom_r, 0, Math.PI * 2);
-  ctx.lineWidth = 1; ctx.strokeStyle = "black"; ctx.stroke();
-
-  drawNotchScaled(ctx, cx, cy, wafer_zoom_r, displayAngleForZoom);
-
-  if (reg.isFI) {
-    if (currentMode === "FI5.X") {
-      drawFIContactOverlayScaled_FI5X(ctx, cx, cy, wafer_zoom_r);
-    } else {
-      drawFIContactOverlayScaled_FI64(ctx, cx, cy, wafer_zoom_r);
-    }
-  } else {
-    if (reg.name === "CS") {
-      if (currentMode === "FI5.X") {
-        drawCSOverlayScaled_FI5X(ctx, cx, cy, wafer_zoom_r);
-      } else {
-        drawCSOverlayScaled_FI64(ctx, cx, cy, wafer_zoom_r);
-      }
-    }
-
-    const sv_config = {
-      "A1": 1,"A2": 1,"B1": 1,"B2": 1,"C1": 1,"C2": 1,"LL1": 1,"LL2": 1
-    };
-    if (sv_config[reg.name]) {
-      const barW = 300 * scale0;
-      const barH = svBarH;
-      const barY = svTopMargin + barH / 2;
-      ctx.save();
-      ctx.translate(cx, barY);
-      ctx.fillStyle = "#4AA3FF"; ctx.fillRect(-barW/2, -barH/2, barW, barH);
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillStyle = "white"; ctx.font = "bold " + Math.max(11, 16*scale0) + "px Arial";
-      ctx.fillText("SLIT VALVE", 0, -barH*0.18);
-      ctx.fillStyle = "black"; ctx.font = "bold " + Math.max(9, 13*scale0) + "px Arial";
-      ctx.fillText(`Station: ${reg.name} | Rotation: ${reg.angle}°`, 0, barH*0.22);
-      ctx.restore();
-    }
-
-    if (reg.name === "LL1") {
-      [60, 130, 240, 270, 310].forEach(deg => drawArchContact(ctx, cx, cy, wafer_zoom_r, deg));
-    }
-    if (reg.name === "LL2") {
-      [220, 285, 45, 80, 120].forEach(deg => drawArchContact(ctx, cx, cy, wafer_zoom_r, deg));
-    }
-
-    if (["A1","A2","B1","B2","C1","C2"].includes(reg.name)) {
-      const offset110 = wafer_zoom_r * (110 / 150);
-      const halfH = Math.sqrt(Math.max(0, wafer_zoom_r*wafer_zoom_r - offset110*offset110));
-      ctx.save();
-      ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 4.5; ctx.setLineDash([]);
-      ctx.beginPath(); ctx.moveTo(cx - offset110, cy - halfH); ctx.lineTo(cx - offset110, cy + halfH); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(cx + offset110, cy - halfH); ctx.lineTo(cx + offset110, cy + halfH); ctx.stroke();
-      ctx.strokeStyle = "#D32F2F"; ctx.lineWidth = 2.2; ctx.setLineDash([5, 4]);
-      ctx.beginPath(); ctx.moveTo(cx - offset110, cy - halfH); ctx.lineTo(cx - offset110, cy + halfH); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(cx + offset110, cy - halfH); ctx.lineTo(cx + offset110, cy + halfH); ctx.stroke();
-      ctx.restore();
-    }
-
-    if (reg.name === "MF1" || reg.name === "MF2") {
-      const offset50 = wafer_zoom_r * (50 / 150);
-      const halfH = Math.sqrt(Math.max(0, wafer_zoom_r*wafer_zoom_r - offset50*offset50));
-      ctx.save();
-      ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 4; ctx.setLineDash([]);
-      ctx.beginPath(); ctx.moveTo(cx - offset50, cy - halfH); ctx.lineTo(cx - offset50, cy + halfH); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(cx + offset50, cy - halfH); ctx.lineTo(cx + offset50, cy + halfH); ctx.stroke();
-      ctx.strokeStyle = "#1976D2"; ctx.lineWidth = 2; ctx.setLineDash([3, 3]);
-      ctx.beginPath(); ctx.moveTo(cx - offset50, cy - halfH); ctx.lineTo(cx - offset50, cy + halfH); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(cx + offset50, cy - halfH); ctx.lineTo(cx + offset50, cy + halfH); ctx.stroke();
-      ctx.restore();
-    }
+    const cassName = document.getElementById('cass').value;
+    const baseAngle = parseInt(document.getElementById('offset').value) || 0;
+    const nameS1 = siblingForSide(reg.name, "S1");
+    const nameS2 = siblingForSide(reg.name, "S2");
+    const angleS1 = getNodeAngle(currentMode, nameS1, cassName, "S1", baseAngle);
+    const angleS2 = getNodeAngle(currentMode, nameS2, cassName, "S2", baseAngle);
+    const halfW = canvasW / 2;
+    renderZoomPanel(ctx, 0, halfW, canvasH, reg, "S1", angleS1, true, nameS1);
+    renderZoomPanel(ctx, halfW, halfW, canvasH, reg, "S2", angleS2, true, nameS2);
+    ctx.save();
+    ctx.strokeStyle = "#cfd8dc"; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(halfW, 12); ctx.lineTo(halfW, canvasH - 12); ctx.stroke();
+    ctx.restore();
   }
 
   if (reg.isFI || reg.name === "CS") {
@@ -541,6 +457,143 @@ function renderZoomView(ctx, canvasW, canvasH, reg) {
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(currentMode, labelX + labelW/2, labelY + labelH/2 + 1);
     ctx.restore();
+  }
+}
+
+function renderZoomPanel(ctx, originX, panelW, panelH, reg, side, angle, showSideBadge, nodeName) {
+  const currentMode = document.getElementById('mode').value;
+  const img = waferImages[side];
+  const name = nodeName || reg.name;
+
+  const hasSV = ["A1","A2","B1","B2","C1","C2","LL1","LL2"].includes(name);
+  const hasArch = ["LL1","LL2","CS"].includes(name);
+  const hasFIOuter = reg.isFI;
+
+  const scale0 = panelW / 500;
+  const svBarH = hasSV ? 40 * scale0 : 0;
+  const svTopMargin = hasSV ? 8 * scale0 : 0;
+  const sideBadgeH = showSideBadge ? Math.max(20, 26 * scale0) : 0;
+  const sideBadgeGap = showSideBadge ? 6 : 0;
+  const reservedTop = sideBadgeH + sideBadgeGap
+                    + (hasSV ? (svBarH + svTopMargin * 2) : 12);
+
+  const archOuter = hasArch ? 20 : 0;
+  const sidePadding = Math.max(archOuter, 14);
+
+  const rFromW = (panelW - 2 * sidePadding) / 2;
+  let rFromH;
+  if (hasFIOuter) {
+    rFromH = (panelH - reservedTop - 14) / 2.18;
+  } else if (hasArch) {
+    rFromH = (panelH - reservedTop - 30) / 2;
+  } else {
+    rFromH = (panelH - reservedTop - 12) / 2;
+  }
+  const wafer_zoom_r = Math.min(rFromH, rFromW);
+
+  const cx = originX + panelW / 2;
+  let topExtra = 0;
+  if (name === "CS") topExtra = 20;
+  const cy = reservedTop + topExtra + wafer_zoom_r;
+  let displayAngleForZoom = (180 + angle) % 360;
+
+  if (!reg.isFI) {
+    let viewRotation = 0;
+    if (["A1", "A2"].includes(name)) viewRotation = 180;
+    else if (["B1", "B2"].includes(name)) viewRotation = -90;
+    else if (["C1", "C2"].includes(name)) viewRotation = 90;
+    displayAngleForZoom = (displayAngleForZoom + viewRotation + 360) % 360;
+  }
+
+  if (showSideBadge) {
+    ctx.save();
+    const badgeW = Math.max(80, 110 * scale0);
+    const badgeY = 4;
+    ctx.fillStyle = side === "S1" ? "#2E7D32" : "#1565C0";
+    ctx.fillRect(cx - badgeW / 2, badgeY, badgeW, sideBadgeH);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold " + Math.max(12, 15 * scale0) + "px 'Segoe UI', sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(`${side} · ${angle}°`, cx, badgeY + sideBadgeH / 2 + 1);
+    ctx.restore();
+  }
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, wafer_zoom_r, 0, Math.PI * 2);
+  ctx.fillStyle = "#fff"; ctx.fill();
+
+  if (img) drawClippedWafer(ctx, img, cx, cy, wafer_zoom_r, displayAngleForZoom);
+
+  ctx.beginPath(); ctx.arc(cx, cy, wafer_zoom_r, 0, Math.PI * 2);
+  ctx.lineWidth = 1; ctx.strokeStyle = "black"; ctx.stroke();
+
+  drawNotchScaled(ctx, cx, cy, wafer_zoom_r, displayAngleForZoom);
+
+  if (reg.isFI) {
+    if (currentMode === "FI5.X") {
+      drawFIContactOverlayScaled_FI5X(ctx, cx, cy, wafer_zoom_r);
+    } else {
+      drawFIContactOverlayScaled_FI64(ctx, cx, cy, wafer_zoom_r);
+    }
+  } else {
+    if (name === "CS") {
+      if (currentMode === "FI5.X") {
+        drawCSOverlayScaled_FI5X(ctx, cx, cy, wafer_zoom_r);
+      } else {
+        drawCSOverlayScaled_FI64(ctx, cx, cy, wafer_zoom_r);
+      }
+    }
+
+    const sv_config = {
+      "A1": 1,"A2": 1,"B1": 1,"B2": 1,"C1": 1,"C2": 1,"LL1": 1,"LL2": 1
+    };
+    if (sv_config[name]) {
+      const barW = Math.min(300 * scale0, panelW - 2 * sidePadding);
+      const barH = svBarH;
+      const barY = sideBadgeH + sideBadgeGap + svTopMargin + barH / 2;
+      ctx.save();
+      ctx.translate(cx, barY);
+      ctx.fillStyle = "#4AA3FF"; ctx.fillRect(-barW/2, -barH/2, barW, barH);
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillStyle = "white"; ctx.font = "bold " + Math.max(11, 16*scale0) + "px Arial";
+      ctx.fillText("SLIT VALVE", 0, -barH*0.18);
+      ctx.fillStyle = "black"; ctx.font = "bold " + Math.max(9, 13*scale0) + "px Arial";
+      ctx.fillText(`${name} | ${angle}°`, 0, barH*0.22);
+      ctx.restore();
+    }
+
+    if (name === "LL1") {
+      [70, 140, 235, 270, 310].forEach(deg => drawArchContact(ctx, cx, cy, wafer_zoom_r, deg));
+    }
+    if (name === "LL2") {
+      [220, 290, 45, 80, 120].forEach(deg => drawArchContact(ctx, cx, cy, wafer_zoom_r, deg));
+    }
+
+    if (["A1","A2","B1","B2","C1","C2"].includes(name)) {
+      const offset110 = wafer_zoom_r * (110 / 150);
+      const halfH = Math.sqrt(Math.max(0, wafer_zoom_r*wafer_zoom_r - offset110*offset110));
+      ctx.save();
+      ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 4.5; ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(cx - offset110, cy - halfH); ctx.lineTo(cx - offset110, cy + halfH); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx + offset110, cy - halfH); ctx.lineTo(cx + offset110, cy + halfH); ctx.stroke();
+      ctx.strokeStyle = "#D32F2F"; ctx.lineWidth = 2.2; ctx.setLineDash([5, 4]);
+      ctx.beginPath(); ctx.moveTo(cx - offset110, cy - halfH); ctx.lineTo(cx - offset110, cy + halfH); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx + offset110, cy - halfH); ctx.lineTo(cx + offset110, cy + halfH); ctx.stroke();
+      ctx.restore();
+    }
+
+    if (name === "MF1" || name === "MF2") {
+      const offset50 = wafer_zoom_r * (50 / 150);
+      const halfH = Math.sqrt(Math.max(0, wafer_zoom_r*wafer_zoom_r - offset50*offset50));
+      ctx.save();
+      ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 4; ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(cx - offset50, cy - halfH); ctx.lineTo(cx - offset50, cy + halfH); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx + offset50, cy - halfH); ctx.lineTo(cx + offset50, cy + halfH); ctx.stroke();
+      ctx.strokeStyle = "#1976D2"; ctx.lineWidth = 2; ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(cx - offset50, cy - halfH); ctx.lineTo(cx - offset50, cy + halfH); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx + offset50, cy - halfH); ctx.lineTo(cx + offset50, cy + halfH); ctx.stroke();
+      ctx.restore();
+    }
   }
 }
 
@@ -868,7 +921,23 @@ window.addEventListener('paste', (e) => {
   document.getElementById(id).addEventListener('input', draw);
 });
 
-window.onload = draw;
+function applyResponsiveScale() {
+  const wrap = document.getElementById('main-wrap');
+  const shell = document.getElementById('scale-shell');
+  if (!wrap || !shell) return;
+  wrap.style.transform = 'none';
+  const naturalW = wrap.offsetWidth;
+  const naturalH = wrap.offsetHeight;
+  if (naturalW === 0) return;
+  const sidePad = 24;
+  const availW = window.innerWidth - sidePad;
+  const k = Math.min(1, availW / naturalW);
+  wrap.style.transform = `scale(${k})`;
+  shell.style.height = (naturalH * k) + 'px';
+}
+window.addEventListener('resize', applyResponsiveScale);
+
+window.onload = () => { draw(); applyResponsiveScale(); };
 </script>
 </body>
 </html>
