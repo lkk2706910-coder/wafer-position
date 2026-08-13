@@ -980,6 +980,36 @@ function _detect_boundaryPixels(mask, w, h, maxCount) {
   return sub;
 }
 
+// Outer contour: leftmost/rightmost foreground pixel per row + top/bottom
+// per column. For wafers with internal patterns (die grids, dies as holes)
+// this gives ONLY outer-perimeter points, not internal grid edges, so RANSAC
+// / LSQ actually see the wafer circle instead of a mass of internal edges.
+function _detect_outerContour(mask, w, h, bbox) {
+  const points = [];
+  for (let y = bbox.minY; y <= bbox.maxY; y++) {
+    const row = y * w;
+    let l = -1, r = -1;
+    for (let x = bbox.minX; x <= bbox.maxX; x++) {
+      if (mask[row + x]) { if (l < 0) l = x; r = x; }
+    }
+    if (l >= 0) {
+      points.push([l, y]);
+      if (r !== l) points.push([r, y]);
+    }
+  }
+  for (let x = bbox.minX; x <= bbox.maxX; x++) {
+    let t = -1, b = -1;
+    for (let y = bbox.minY; y <= bbox.maxY; y++) {
+      if (mask[y * w + x]) { if (t < 0) t = y; b = y; }
+    }
+    if (t >= 0) {
+      points.push([x, t]);
+      if (b !== t) points.push([x, b]);
+    }
+  }
+  return points;
+}
+
 function _detect_ransacCircle(points, w, h, maxIter, tolPct) {
   const n = points.length;
   if (n < 3) return null;
@@ -1022,24 +1052,59 @@ function detectWaferCircle(data, w, h) {
     };
   }
 
-  // RANSAC over the component's boundary pixels finds the dominant circular
-  // arc even when wafer + metadata text / borders / scale bars form one
-  // connected component. LSQ alone would be biased by the non-circular tail.
-  const boundary = _detect_boundaryPixels(comp.mask, w, h, 1500);
+  // Use the OUTER contour (leftmost/rightmost per row + top/bottom per column)
+  // rather than every foreground boundary pixel. For wafers whose interior is
+  // patterned (die grid, dies as white holes) the raw boundary is dominated by
+  // internal die/grid edges (17:1 vs the wafer perimeter) and RANSAC almost
+  // never picks 3 truly-outer points. The outer contour excludes all internal
+  // edges by construction, so both LSQ and RANSAC see the wafer circle.
+  const bbox = { minX: comp.minX, maxX: comp.maxX, minY: comp.minY, maxY: comp.maxY };
+  const contour = _detect_outerContour(comp.mask, w, h, bbox);
   let cx, cy, r, haveFit = false;
-  if (boundary.length >= 30) {
-    const ransac = _detect_ransacCircle(boundary, w, h, 500, 0.025);
-    if (ransac && ransac.inliers >= 20) {
+  if (contour.length >= 30) {
+    // LSQ + outlier-rejection iterations first (fast, exact when data is
+    // clean like a die-grid wafer). RANSAC as robust backup for cases with
+    // significant off-wafer tail (metadata text below the wafer).
+    let fCx = comp.sumX / comp.size;
+    let fCy = comp.sumY / comp.size;
+    let fR  = Math.min(comp.maxX - comp.minX, comp.maxY - comp.minY) / 2;
+    for (let iter = 0; iter < 6; iter++) {
+      const fit = _detect_fitCircle(contour);
+      if (!fit) break;
+      const tol = Math.max(2, 0.03 * fit.r);
+      const inl = contour.filter(([x, y]) =>
+        Math.abs(Math.hypot(x - fit.cx, y - fit.cy) - fit.r) < tol);
+      let final = fit;
+      if (inl.length >= 20) {
+        const refit = _detect_fitCircle(inl);
+        if (refit) final = refit;
+      }
+      const dx = final.cx - fCx, dy = final.cy - fCy, dr = final.r - fR;
+      fCx = final.cx; fCy = final.cy; fR = final.r;
+      if (Math.abs(dx) < 0.3 && Math.abs(dy) < 0.3 && Math.abs(dr) < 0.3) break;
+    }
+    // Count LSQ inliers
+    const lsqTol = Math.max(2, 0.03 * fR);
+    const lsqInliers = contour.filter(([x, y]) =>
+      Math.abs(Math.hypot(x - fCx, y - fCy) - fR) < lsqTol).length;
+
+    // RANSAC pass — usually confirms the LSQ result but rescues cases where
+    // outlier rejection collapsed onto a wrong subset.
+    const ransac = _detect_ransacCircle(contour, w, h, 500, 0.025);
+
+    if (ransac && ransac.inliers > lsqInliers * 1.15) {
       cx = ransac.cx; cy = ransac.cy; r = ransac.r;
-      haveFit = true;
       const tol = Math.max(2, 0.025 * r);
-      const inliers = boundary.filter(([x, y]) =>
+      const inliers = contour.filter(([x, y]) =>
         Math.abs(Math.hypot(x - cx, y - cy) - r) < tol);
       if (inliers.length >= 20) {
         const refit = _detect_fitCircle(inliers);
         if (refit) { cx = refit.cx; cy = refit.cy; r = refit.r; }
       }
+    } else {
+      cx = fCx; cy = fCy; r = fR;
     }
+    haveFit = true;
   }
   if (!haveFit) {
     cx = comp.sumX / comp.size;
